@@ -20,7 +20,8 @@ echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 ## Run an example
 
 ```bash
-make run 1_1_agentic_loop   # file name, name.py, or full path
+make run 1_1   # code = <domain>_<lesson>; runs D1-*/codes/1_1_*.py
+make run 2_1   # runs D2-*/codes/2_1_*.py
 ```
 
 Same as `uv run --env-file .env python <path>`.
