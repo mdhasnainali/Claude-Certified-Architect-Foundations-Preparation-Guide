@@ -8,8 +8,12 @@ ifeq (run,$(firstword $(MAKECMDGOALS)))
   $(eval $(ARG):;@:)
 endif
 
+# Agent SDK: skip claude.ai connectors; they're off anyway when an API key is set.
+export ENABLE_CLAUDEAI_MCP_SERVERS = false
+
 .PHONY: run
 run:
 	@test -n "$(ARG)" || { echo "usage: make run <file>"; exit 1; }
 	@test -n "$(FILE)" || { echo "not found: $(ARG)"; exit 1; }
+	@grep -qsE '^(export )?ANTHROPIC_API_KEY=.' .env || { echo "ANTHROPIC_API_KEY missing in .env"; exit 1; }
 	uv run --env-file .env python $(FILE)
