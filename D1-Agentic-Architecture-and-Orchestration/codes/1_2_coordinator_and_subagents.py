@@ -25,12 +25,14 @@ AGENTS = {
         description="Merges findings given in its prompt into a cited brief. Lists gaps.",
         prompt="Use only the findings in your prompt. Keep each claim's source.",
         tools=["Read"],
+        model="haiku",
     ),
 }
 
 
 async def main():
     opts = ClaudeAgentOptions(
+        model="haiku",  # the coordinator; without this it uses the CLI default model
         system_prompt=COORDINATOR,
         agents=AGENTS,
         max_budget_usd=0.5,
