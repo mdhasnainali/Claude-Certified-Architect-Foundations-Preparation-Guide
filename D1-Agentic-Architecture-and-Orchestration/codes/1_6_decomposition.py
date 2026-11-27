@@ -1,4 +1,4 @@
-# anthropic 2.14. Run: make run 1_6  (reviews extra/*.py)  or pass files: ... 1_6_decomposition.py a.py b.py
+# 1_6_decomposition.py — anthropic 2.14. Run: make run 1_6  (reviews extra/*.py)  or pass files: ... 1_6_decomposition.py a.py b.py
 """Prompt chaining: one big review split into small, focused calls.
 
 Single pass = ONE call: all files + "find every bug". Attention spreads thin, so bugs get missed.
@@ -17,42 +17,45 @@ import anthropic
 client = anthropic.Anthropic()
 
 
-def ask(prompt: str) -> str:
+def ask_claude(prompt: str) -> str:
     """One API call: prompt in, text out. Every step of the chain uses this."""
-    r = client.messages.create(
+    response = client.messages.create(
         model="claude-haiku-5-5",
         max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
     )
-    return "".join(b.text for b in r.content if b.type == "text")
+    return "".join(block.text for block in response.content if block.type == "text")
 
 
-EXTRA = pathlib.Path(__file__).parent / "extra"
-paths = [pathlib.Path(p) for p in sys.argv[1:]] or sorted(EXTRA.glob("*.py"))
-files = {p.name: p.read_text() for p in paths}  # {"orders.py": "<source>", ...}
+EXTRA_DIR = pathlib.Path(__file__).parent / "extra"
+paths = [pathlib.Path(arg) for arg in sys.argv[1:]] or sorted(EXTRA_DIR.glob("*.py"))
+# {"orders.py": "<source code>", ...}
+sources = {path.name: path.read_text() for path in paths}
 
 # Step 1 — N calls, one per file. The model sees ONE small file, so it reads it closely.
 # Weak spot: it can't see the other files, so it can't catch bugs BETWEEN files.
-local = {
-    name: ask(
+per_file_reviews = {
+    name: ask_claude(
         "Review ONLY this file for bugs. Max 5 findings: line, issue, fix.\n"
-        + f"<file name='{name}'>\n{src}\n</file>"
+        + f"<file name='{name}'>\n{source}\n</file>"
     )
-    for name, src in files.items()
+    for name, source in sources.items()
 }
-for name, review in local.items():
+for name, review in per_file_reviews.items():
     print(f"=== {name}\n{review}\n")
 
 # Step 2 — 1 call with ALL files. Told to skip local bugs (Step 1 did them),
 # so its whole attention goes to the seams: what one file passes to another.
 # It gets the raw files again, NOT Step 1's answers.
-code = "\n".join(f"<file name='{name}'>\n{src}\n</file>" for name, src in files.items())
+all_files = "\n".join(
+    f"<file name='{name}'>\n{source}\n</file>" for name, source in sources.items()
+)
 print(
     "=== CROSS-FILE\n"
-    + ask(
+    + ask_claude(
         "These files were already reviewed one by one. Report ONLY cross-file problems: "
         + "data passed between files, mismatched function contracts, duplicated logic.\n"
-        + code
+        + all_files
     )
 )
 

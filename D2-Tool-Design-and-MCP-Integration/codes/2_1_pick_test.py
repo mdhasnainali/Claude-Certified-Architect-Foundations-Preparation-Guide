@@ -2,33 +2,33 @@
 import anthropic
 
 client = anthropic.Anthropic()
-ARG = {
+SOURCE_INPUT_SCHEMA = {
     "type": "object",
     "properties": {"source": {"type": "string"}},
     "required": ["source"],
 }
-VAGUE = [
+VAGUE_TOOLS = [
     {
         "name": "analyze_content",
         "description": "Analyzes content and returns insights.",
-        "input_schema": ARG,
+        "input_schema": SOURCE_INPUT_SCHEMA,
     },
     {
         "name": "analyze_document",
         "description": "Analyzes a document and returns insights.",
-        "input_schema": ARG,
+        "input_schema": SOURCE_INPUT_SCHEMA,
     },
 ]
-CLEAR = [
+CLEAR_TOOLS = [
     {
         "name": "extract_web_results",
-        "input_schema": ARG,
+        "input_schema": SOURCE_INPUT_SCHEMA,
         "description": "Extract facts from WEB SEARCH RESULTS already fetched in this conversation. source = the "
         "search query they came from. Use for anything found online. Never use for files or PDFs.",
     },
     {
         "name": "analyze_document",
-        "input_schema": ARG,
+        "input_schema": SOURCE_INPUT_SCHEMA,
         "description": "Analyze ONE uploaded file (PDF, DOCX, report). source = file name, e.g. q3-report.pdf. "
         "Returns key figures with page numbers. Use only for files, never for web search results.",
     },
@@ -40,15 +40,31 @@ QUERIES = [
 ]
 
 
-def pick(tools: list, query: str) -> list[str]:
-    r = client.messages.create(
+def pick_tools(tools: list, query: str) -> list[str]:
+    response = client.messages.create(
         model="claude-haiku-5-5",
         max_tokens=2000,
         tools=tools,
         messages=[{"role": "user", "content": query}],
     )
-    return [b.name for b in r.content if b.type == "tool_use"] or ["(no tool)"]
+    return [block.name for block in response.content if block.type == "tool_use"] or [
+        "(no tool)"
+    ]
 
 
-for q in QUERIES:
-    print(f"{q[:40]:42} vague → {pick(VAGUE, q)}\n{'':42} clear → {pick(CLEAR, q)}")
+for query in QUERIES:
+    print(
+        f"{query[:40]:42} vague → {pick_tools(VAGUE_TOOLS, query)}\n"
+        f"{'':42} clear → {pick_tools(CLEAR_TOOLS, query)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sample output: make run 2_1
+# ---------------------------------------------------------------------------
+# Pull the key numbers from q3-report.pdf    vague → ['analyze_document']
+#                                            clear → ['analyze_document']
+# What did the search results for 'EU AI A   vague → ['(no tool)']
+#                                            clear → ['extract_web_results']
+# Check the report's revenue claim against   vague → ['(no tool)']
+#                                            clear → ['(no tool)']

@@ -31,8 +31,8 @@ DB_UP = True  # set False to simulate an outage
 def ok(data) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(data)}]}
 
-def err(category: str, retryable: bool, message: str, **extra) -> dict:
-    body = {"errorCategory": category, "isRetryable": retryable, "message": message, **extra}
+def structured_error(category: str, retryable: bool, message: str, **details) -> dict:
+    body = {"errorCategory": category, "isRetryable": retryable, "message": message, **details}
     return {"content": [{"type": "text", "text": json.dumps(body)}], "is_error": True}
 ```
 In Agent SDK custom tools you return `"is_error": True` (the in-process server turns it into MCP `isError`).
@@ -60,8 +60,8 @@ Fast mapping from question words to the D2 answer:
 1. Use the new part 1 above. Keep `get_customer`, `process_refund`, `escalate_to_human` from L1.
 2. Replace `lookup_order` with a version that has a description with boundaries, and add a similar tool `get_order_history`. *(2.1)*
 3. Return a transient structured error when `DB_UP` is `False`; return "not found" and "no orders" as normal results. *(2.2)*
-4. Add `get_order_history` to the server, to `allowed_tools`, and to the `gate` hook's matcher. *(2.3)*
-5. In `ask()`, print each tool the agent calls. Run: *"I'm ana@example.com. What did I buy in October?"* and *"…Where is ORD-9?"* Each should hit a different tool. Then set `DB_UP = False` and run again: the agent should say the system is down, not "you have no orders".
+4. Add `get_order_history` to the server, to `allowed_tools`, and to the `require_verified` hook's matcher. *(2.3)*
+5. In `run_session()`, print each tool the agent calls. Run: *"I'm ana@example.com. What did I buy in October?"* and *"…Where is ORD-9?"* Each should hit a different tool. Then set `DB_UP = False` and run again: the agent should say the system is down, not "you have no orders".
 
 <details><summary>Solution</summary>
 
@@ -73,27 +73,28 @@ Fast mapping from question words to the D2 answer:
       {"customer_id": str, "order_id": str})
 async def lookup_order(args):
     if not DB_UP:
-        return err("transient", True, "Order database timeout.", retry_after_s=2)
-    o = ORDERS.get(args["order_id"])
-    if not o:  # the query worked, there is just no match: a result, not an error
+        return structured_error("transient", True, "Order database timeout.", retry_after_s=2)
+    order = ORDERS.get(args["order_id"])
+    if not order:  # the query worked, there is just no match: a result, not an error
         return ok({"found": False, "order_id": args["order_id"], "hint": "Ask the customer to check the number."})
-    return ok({"found": True, **o})
+    return ok({"found": True, **order})
 
 @tool("get_order_history", "List ALL orders of one verified customer, newest first (number, "
       "month, total, status). Use for 'my past orders', 'what did I buy in October'. Does not "
       "return item details; call lookup_order for one order's details.", {"customer_id": str})
 async def get_order_history(args):
     if not DB_UP:
-        return err("transient", True, "Order database timeout.", retry_after_s=2)
+        return structured_error("transient", True, "Order database timeout.", retry_after_s=2)
     # an empty list is a valid answer ("no orders yet"), NOT an error
-    return ok([{"order_id": k, **v} for k, v in ORDERS.items() if v["customer_id"] == args["customer_id"]])
+    return ok([{"order_id": order_id, **order} for order_id, order in ORDERS.items()
+               if order["customer_id"] == args["customer_id"]])
 ```
-Then add `get_order_history` to the `create_sdk_mcp_server(..., tools=[...])` list. In `support_agent.py`: add `"get_order_history"` to the `allowed_tools` names, use the matcher `f"{T}lookup_order|{T}get_order_history|{T}process_refund"` for `gate`, and inside `ask()`'s loop add:
+Then add `get_order_history` to the `create_sdk_mcp_server(..., tools=[...])` list. In `support_agent.py`: add `"get_order_history"` to the `allowed_tools` names, use the matcher `f"{TOOL_PREFIX}lookup_order|{TOOL_PREFIX}get_order_history|{TOOL_PREFIX}process_refund"` for `require_verified`, and inside `run_session()`'s loop add:
 ```python
-        if isinstance(m, AssistantMessage):              # import AssistantMessage, ToolUseBlock
-            for b in m.content:
-                if isinstance(b, ToolUseBlock):
-                    print("  tool →", b.name)
+        if isinstance(message, AssistantMessage):        # import AssistantMessage, ToolUseBlock
+            for block in message.content:
+                if isinstance(block, ToolUseBlock):
+                    print("  tool →", block.name)
 ```
 Expected: "What did I buy in October?" → `get_customer`, `get_order_history`. "Where is ORD-9?" → `get_customer`, `lookup_order`. With `DB_UP = False` the agent apologises that the order system is unavailable and may retry once.
 

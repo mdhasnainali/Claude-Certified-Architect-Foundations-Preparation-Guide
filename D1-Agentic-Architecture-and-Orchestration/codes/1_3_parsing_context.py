@@ -1,7 +1,7 @@
-# handoff.py — Python 3.12+, no API key needed: python3 handoff.py
+# 1_3_parsing_context.py — Python 3.13+, no API key needed: python3 1_3_parsing_context.py
 import json
 
-findings = [  # what the search and document subagents returned
+subagent_findings = [  # what the search and document subagents returned
     {
         "claim": "62% of illustrators use AI tools weekly",
         "source": "https://example.org/survey-2026",
@@ -17,17 +17,21 @@ findings = [  # what the search and document subagents returned
 ]
 
 
-def synthesis_prompt(section: str, findings: list[dict]) -> str:
-    items = [{"id": i, **f} for i, f in enumerate(findings, start=1)]
+def build_synthesis_prompt(section: str, findings: list[dict]) -> str:
+    numbered = [
+        {"id": number, **finding} for number, finding in enumerate(findings, start=1)
+    ]
     return (
         f"Write the section '{section}'.\n"
         "Use ONLY the findings below. Cite each claim as [id]. Keep dates.\n"
         "If findings disagree, show both with their sources; do not pick one.\n"
-        "<findings>\n" + "\n".join(json.dumps(x) for x in items) + "\n</findings>"
+        "<findings>\n"
+        + "\n".join(json.dumps(finding) for finding in numbered)
+        + "\n</findings>"
     )
 
 
-print(synthesis_prompt("Creative jobs", findings))
+print(build_synthesis_prompt("Creative jobs", subagent_findings))
 
 
 # ---------------------------------------------------------------------------

@@ -1,42 +1,44 @@
-# sessions_sdk.py — claude-agent-sdk 0.2.188. Run: uv run --with claude-agent-sdk python sessions_sdk.py
+# 1_7_resume_and_fork.py — claude-agent-sdk 0.2.188. Run: uv run --with claude-agent-sdk python 1_7_resume_and_fork.py
 import asyncio
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 
-async def run(prompt: str, **opts) -> str | None:
-    sid = None
-    async for m in query(
+async def run_session(prompt: str, **session_options) -> str | None:
+    session_id = None
+    async for message in query(
         prompt=prompt,
         options=ClaudeAgentOptions(
             model="haiku",  # without this it uses the CLI default model
             allowed_tools=["Read", "Grep", "Glob"],
-            **opts,
+            **session_options,
         ),
     ):
-        if isinstance(m, ResultMessage):
-            sid = m.session_id
-            print(f"[{m.subtype}] session={sid}\n{m.result or ''}\n")
-    return sid
+        if isinstance(message, ResultMessage):
+            session_id = message.session_id
+            print(f"[{message.subtype}] session={session_id}\n{message.result or ''}\n")
+    return session_id
 
 
 async def main():
-    base = await run("Map this repo's test setup: frameworks, fixtures, slow tests.")
-    # Branch A and B start from the SAME analysis; base stays unchanged
-    a = await run(
+    base_session_id = await run_session(
+        "Map this repo's test setup: frameworks, fixtures, slow tests."
+    )
+    # Branch A and B start from the SAME analysis; the base session stays unchanged
+    await run_session(
         "Plan approach A: speed up tests with parallel runs.",
-        resume=base,
+        resume=base_session_id,
         fork_session=True,
     )
-    b = await run(
+    await run_session(
         "Plan approach B: speed up tests with better fixtures.",
-        resume=base,
+        resume=base_session_id,
         fork_session=True,
     )
     # Later: continue the original line of work with a targeted update
-    await run(
+    await run_session(
         "I edited tests/conftest.py since your analysis. Re-read only that file, "
         "then update your summary.",
-        resume=base,
+        resume=base_session_id,
     )
 
 

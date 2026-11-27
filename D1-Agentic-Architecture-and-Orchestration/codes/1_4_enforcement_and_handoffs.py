@@ -1,38 +1,37 @@
-# gate.py — Python 3.12+. Runs offline: python3 gate.py (same callback shape the Agent SDK calls)
+# 1_4_enforcement_and_handoffs.py — Python 3.13+. Runs offline: python3 1_4_enforcement_and_handoffs.py (same callback shape the Agent SDK calls)
 import asyncio
 
-verified: set[str] = set()  # customer IDs that get_customer has verified this session
+# customer IDs that get_customer has verified this session
+verified_customers: set[str] = set()
 
 
-async def remember_verified(
-    inp, tool_use_id, ctx
-):  # PostToolUse, matcher: get_customer
-    if inp["tool_response"].get("verified"):
-        verified.add(inp["tool_input"]["customer_id"])
+# PostToolUse hook, matcher: get_customer
+async def remember_verified(input_data, tool_use_id, context):
+    if input_data["tool_response"].get("verified"):
+        verified_customers.add(input_data["tool_input"]["customer_id"])
     return {}
 
 
-async def require_verified(
-    inp, tool_use_id, ctx
-):  # PreToolUse, matcher: lookup_order|process_refund
-    cid = inp["tool_input"].get("customer_id")
-    if cid in verified:
+# PreToolUse hook, matcher: lookup_order|process_refund
+async def require_verified(input_data, tool_use_id, context):
+    customer_id = input_data["tool_input"].get("customer_id")
+    if customer_id in verified_customers:
         return {}  # no decision → normal permission flow
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": f"Customer {cid} is not verified. Call get_customer first.",
+            "permissionDecisionReason": f"Customer {customer_id} is not verified. Call get_customer first.",
         }
     }
 
 
 async def demo():
-    refund = {
+    refund_call = {
         "tool_name": "mcp__support__process_refund",
         "tool_input": {"customer_id": "C7", "amount": 40},
     }
-    print("before:", await require_verified(refund, None, None))
+    print("before:", await require_verified(refund_call, None, None))
     await remember_verified(
         {
             "tool_name": "mcp__support__get_customer",
@@ -42,7 +41,7 @@ async def demo():
         None,
         None,
     )
-    print("after: ", await require_verified(refund, None, None))
+    print("after: ", await require_verified(refund_call, None, None))
 
 
 asyncio.run(demo())

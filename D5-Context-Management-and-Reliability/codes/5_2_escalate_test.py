@@ -2,7 +2,7 @@
 import anthropic
 
 client = anthropic.Anthropic()
-SYSTEM = """You are a support agent for an online shop.
+SYSTEM_PROMPT = """You are a support agent for an online shop.
 Call escalate_to_human when: the customer asks for a person (at once, no investigation first);
 policy is silent or unclear on the request; or you cannot make progress.
 Do NOT escalate only because the customer is upset or the case has several steps.
@@ -12,10 +12,10 @@ Otherwise call resolve.
 <example>"Amazon is $20 cheaper, match it." → escalate_to_human: policy covers only our own price changes.</example>"""
 
 
-def tool(name: str, desc: str) -> dict:
+def make_tool(name: str, description: str) -> dict:
     return {
         "name": name,
-        "description": desc,
+        "description": description,
         "input_schema": {
             "type": "object",
             "properties": {"note": {"type": "string"}},
@@ -25,27 +25,28 @@ def tool(name: str, desc: str) -> dict:
 
 
 TOOLS = [
-    tool("escalate_to_human", "Hand the case to a human. note = reason."),
-    tool(
+    make_tool("escalate_to_human", "Hand the case to a human. note = reason."),
+    make_tool(
         "ask_customer", "Ask the customer ONE clarifying question. note = the question."
     ),
-    tool("resolve", "Solve the case within policy. note = the action taken."),
+    make_tool("resolve", "Solve the case within policy. note = the action taken."),
 ]
-CASES = [
+CUSTOMER_MESSAGES = [
     "I want to talk to a real person, now.",
     "My parcel came damaged, photo attached. So annoying!!",
     "Can you match the price BestDeals has for this TV?",
     "Refund my order. I'm John Smith. [lookup: 3 customers named John Smith]",
 ]
 
-for case in CASES:
-    r = client.messages.create(
+for customer_message in CUSTOMER_MESSAGES:
+    response = client.messages.create(
         model="claude-haiku-5-5",
         max_tokens=2000,
-        system=SYSTEM,
+        system=SYSTEM_PROMPT,
         tools=TOOLS,
-        messages=[{"role": "user", "content": case}],
+        messages=[{"role": "user", "content": customer_message}],
     )
-    print(
-        f"{case[:46]:48} → {[b.name for b in r.content if b.type == 'tool_use'] or ['(text only)']}"
-    )
+    tools_called = [
+        block.name for block in response.content if block.type == "tool_use"
+    ]
+    print(f"{customer_message[:46]:48} → {tools_called or ['(text only)']}")

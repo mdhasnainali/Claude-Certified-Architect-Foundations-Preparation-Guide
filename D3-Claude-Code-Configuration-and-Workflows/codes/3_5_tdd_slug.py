@@ -1,7 +1,7 @@
 # 3_5_tdd_slug.py — Python 3.13+, offline. Tests first: concrete input → output examples Claude must satisfy.
 import re
 
-CASES = [  # (input, expected) — written BEFORE the implementation
+TEST_CASES = [  # (input, expected) — written BEFORE the implementation
     ("Hello World", "hello-world"),
     ("  Café crème  ", "cafe-creme"),
     ("C++ & Rust: 2026!", "c-rust-2026"),
@@ -15,7 +15,11 @@ def slugify(text: str) -> str:  # first attempt (pretend Claude wrote it)
     return re.sub(r"[^a-z0-9]+", "-", text).strip("-")
 
 
-failures = [(i, exp, got) for i, exp in CASES if (got := slugify(i)) != exp]
-print(f"{len(CASES) - len(failures)}/{len(CASES)} passing")
-for i, exp, got in failures:  # paste exactly this back to Claude
-    print(f"FAIL slugify({i!r}) → {got!r}, expected {exp!r}")
+failures = [
+    (text, expected, actual)
+    for text, expected in TEST_CASES
+    if (actual := slugify(text)) != expected
+]
+print(f"{len(TEST_CASES) - len(failures)}/{len(TEST_CASES)} passing")
+for text, expected, actual in failures:  # paste exactly this back to Claude
+    print(f"FAIL slugify({text!r}) → {actual!r}, expected {expected!r}")

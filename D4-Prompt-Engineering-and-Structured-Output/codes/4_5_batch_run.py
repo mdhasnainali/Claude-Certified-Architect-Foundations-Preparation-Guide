@@ -5,14 +5,14 @@ from anthropic.types.message_create_params import MessageCreateParamsNonStreamin
 from anthropic.types.messages.batch_create_params import Request
 
 client = anthropic.Anthropic()
-DOCS = {
+INVOICES = {
     "inv-001": "Invoice A. Hosting $120. Total $120.",
     "inv-002": "Invoice B. Support $80. Total $80.",
     "inv-003": "Invoice C. Licences $1,440. Total $1,440.",
 }
 
 
-def request(doc_id: str, text: str) -> Request:
+def build_request(doc_id: str, text: str) -> Request:
     return Request(
         custom_id=doc_id,
         params=MessageCreateParamsNonStreaming(
@@ -29,23 +29,26 @@ def request(doc_id: str, text: str) -> Request:
 
 
 batch = client.messages.batches.create(
-    requests=[request(k, v) for k, v in DOCS.items()]
+    requests=[build_request(doc_id, text) for doc_id, text in INVOICES.items()]
 )
 while (
     batch := client.messages.batches.retrieve(batch.id)
 ).processing_status != "ended":
     time.sleep(60)  # most batches end within 1 hour; the hard limit is 24 hours
 
-failed = []
-for res in client.messages.batches.results(
-    batch.id
-):  # results arrive in ANY order → key by custom_id
-    if res.result.type == "succeeded":
+failed_ids = []
+# results arrive in ANY order → match them by custom_id
+for entry in client.messages.batches.results(batch.id):
+    if entry.result.type == "succeeded":
         print(
-            res.custom_id,
+            entry.custom_id,
             "→",
-            next(b.text for b in res.result.message.content if b.type == "text"),
+            next(
+                block.text
+                for block in entry.result.message.content
+                if block.type == "text"
+            ),
         )
     else:
-        failed.append(res.custom_id)  # errored / expired / canceled
-print("resubmit only these:", failed)
+        failed_ids.append(entry.custom_id)  # errored / expired / canceled
+print("resubmit only these:", failed_ids)

@@ -45,9 +45,9 @@ findings = [  # claim-source mappings returned by two subagents
         "date": "2026-05",
     },
 ]
-by_metric = defaultdict(list)
-for f in findings:
-    by_metric[f["metric"]].append(f)
+findings_by_metric = defaultdict(list)
+for finding in findings:
+    findings_by_metric[finding["metric"]].append(finding)
 
 sections = {
     "Well-established": [],
@@ -55,18 +55,21 @@ sections = {
     "Changed over time": [],
     "Contested": [],
 }
-for metric, fs in by_metric.items():
-    cites = "; ".join(f"{f['value']} ({f['source']}, {f['date']})" for f in fs)
-    if len(fs) == 1:
-        sections["Single source"].append(f"{metric}: {cites}")
-    elif len({f["value"] for f in fs}) == 1:  # 2+ sources agree
-        sections["Well-established"].append(f"{metric}: {cites}")
-    elif (
-        len({f["date"] for f in fs}) > 1
-    ):  # different dates → a trend, not a contradiction
-        sections["Changed over time"].append(f"{metric}: {cites}")
+for metric, metric_findings in findings_by_metric.items():
+    citations = "; ".join(
+        f"{finding['value']} ({finding['source']}, {finding['date']})"
+        for finding in metric_findings
+    )
+    values = {finding["value"] for finding in metric_findings}
+    dates = {finding["date"] for finding in metric_findings}
+    if len(metric_findings) == 1:
+        sections["Single source"].append(f"{metric}: {citations}")
+    elif len(values) == 1:  # 2+ sources agree
+        sections["Well-established"].append(f"{metric}: {citations}")
+    elif len(dates) > 1:  # different dates → a trend, not a contradiction
+        sections["Changed over time"].append(f"{metric}: {citations}")
     else:  # same period, different values → keep both
-        sections["Contested"].append(f"{metric}: sources disagree: {cites}")
+        sections["Contested"].append(f"{metric}: sources disagree: {citations}")
 
-for title, items in sections.items():
-    print(f"## {title}\n" + "\n".join(f"- {i}" for i in items))
+for section, entries in sections.items():
+    print(f"## {section}\n" + "\n".join(f"- {entry}" for entry in entries))

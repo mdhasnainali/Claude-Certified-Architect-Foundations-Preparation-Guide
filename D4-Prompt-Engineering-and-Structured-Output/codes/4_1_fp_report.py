@@ -2,7 +2,7 @@
 from collections import Counter
 
 # one row per comment the review bot posted last month: (category, what the developer did)
-log = (
+review_log = (
     [("sql-injection", "fixed")] * 9
     + [("sql-injection", "dismissed")] * 1
     + [("null-deref", "fixed")] * 14
@@ -13,12 +13,19 @@ log = (
     + [("comment-accuracy", "dismissed")] * 18
 )
 
-posted = Counter(cat for cat, _ in log)
-fixed = Counter(cat for cat, action in log if action == "fixed")
-for cat in posted:
-    precision = fixed[cat] / posted[cat]
-    action = "keep" if precision >= 0.6 else "PAUSE category, rewrite its criteria"
-    print(f"{cat:17} posted={posted[cat]:3}  precision={precision:4.0%}  → {action}")
+posted_count = Counter(category for category, _ in review_log)
+fixed_count = Counter(
+    category for category, developer_action in review_log if developer_action == "fixed"
+)
+for category in posted_count:
+    precision = fixed_count[category] / posted_count[category]
+    recommendation = (
+        "keep" if precision >= 0.6 else "PAUSE category, rewrite its criteria"
+    )
+    print(
+        f"{category:17} posted={posted_count[category]:3}  "
+        f"precision={precision:4.0%}  → {recommendation}"
+    )
 print(
-    f"overall precision {sum(fixed.values()) / len(log):.0%}: most comments are noise, so developers ignore all of them"
+    f"overall precision {sum(fixed_count.values()) / len(review_log):.0%}: most comments are noise, so developers ignore all of them"
 )

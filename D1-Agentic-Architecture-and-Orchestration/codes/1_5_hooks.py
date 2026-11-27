@@ -1,34 +1,40 @@
-# hooks_demo.py — Python 3.12+. Runs offline: python3 hooks_demo.py
+# 1_5_hooks.py — Python 3.13+. Runs offline: python3 1_5_hooks.py
 import asyncio, json
 from datetime import datetime, timezone
 
-STATUS = {0: "pending", 1: "shipped", 2: "delivered", 9: "cancelled"}
+STATUS_NAMES = {0: "pending", 1: "shipped", 2: "delivered", 9: "cancelled"}
 
 
-def normalize(rec: dict) -> dict:
-    if isinstance(rec.get("updated"), (int, float)):  # Unix seconds → ISO 8601
-        rec["updated"] = datetime.fromtimestamp(
-            rec["updated"], timezone.utc
+def normalize_order(order: dict) -> dict:
+    if isinstance(order.get("updated"), (int, float)):  # Unix seconds → ISO 8601
+        order["updated"] = datetime.fromtimestamp(
+            order["updated"], timezone.utc
         ).isoformat()
-    if isinstance(rec.get("status"), int):  # numeric code → word
-        rec["status"] = STATUS.get(rec["status"], f"unknown({rec['status']})")
-    return rec
+    if isinstance(order.get("status"), int):  # numeric code → word
+        order["status"] = STATUS_NAMES.get(
+            order["status"], f"unknown({order['status']})"
+        )
+    return order
 
 
-async def normalize_output(inp, tool_use_id, ctx):  # PostToolUse, matcher "^mcp__"
-    rec = normalize(json.loads(inp["tool_response"]["content"][0]["text"]))
+# PostToolUse hook, matcher "^mcp__"
+async def normalize_output(input_data, tool_use_id, context):
+    order = normalize_order(
+        json.loads(input_data["tool_response"]["content"][0]["text"])
+    )
     return {
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "updatedToolOutput": {
-                "content": [{"type": "text", "text": json.dumps(rec)}]
+                "content": [{"type": "text", "text": json.dumps(order)}]
             },
         }
     }
 
 
-async def refund_limit(inp, tool_use_id, ctx):  # PreToolUse, matcher process_refund
-    if inp["tool_input"]["amount"] <= 500:
+# PreToolUse hook, matcher: process_refund
+async def enforce_refund_limit(input_data, tool_use_id, context):
+    if input_data["tool_input"]["amount"] <= 500:
         return {}
     return {
         "hookSpecificOutput": {
@@ -40,7 +46,7 @@ async def refund_limit(inp, tool_use_id, ctx):  # PreToolUse, matcher process_re
 
 
 async def demo():
-    raw = {
+    tool_response = {
         "content": [
             {
                 "type": "text",
@@ -49,12 +55,12 @@ async def demo():
         ]
     }
     print(
-        (await normalize_output({"tool_response": raw}, None, None))[
+        (await normalize_output({"tool_response": tool_response}, None, None))[
             "hookSpecificOutput"
         ]["updatedToolOutput"]
     )
-    print(await refund_limit({"tool_input": {"amount": 120}}, None, None))
-    print(await refund_limit({"tool_input": {"amount": 900}}, None, None))
+    print(await enforce_refund_limit({"tool_input": {"amount": 120}}, None, None))
+    print(await enforce_refund_limit({"tool_input": {"amount": 900}}, None, None))
 
 
 asyncio.run(demo())

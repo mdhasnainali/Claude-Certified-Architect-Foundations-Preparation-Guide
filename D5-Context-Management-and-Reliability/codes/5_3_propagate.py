@@ -30,18 +30,19 @@ def search_subagent(subtopic: str) -> dict:
 
 
 findings, coverage = [], {}
-for sub in ("visual art", "music", "film"):
-    r = search_subagent(sub)
-    if r["status"] == "partial":  # failure WITH context → recover, don't crash
-        findings += r["partial_results"]
-        coverage[sub] = (
-            f"PARTIAL ({r['failure_type']}; tried {r['attempted']}). Next: {r['alternatives'][0]}"
+for subtopic in ("visual art", "music", "film"):
+    report = search_subagent(subtopic)
+    if report["status"] == "partial":  # failure WITH context → recover, don't crash
+        findings += report["partial_results"]
+        coverage[subtopic] = (
+            f"PARTIAL ({report['failure_type']}; tried {report['attempted']}). "
+            f"Next: {report['alternatives'][0]}"
         )
-    elif not r["results"]:  # valid empty result → a real gap, not an error
-        coverage[sub] = "GAP: searched successfully, no sources found"
+    elif not report["results"]:  # valid empty result → a real gap, not an error
+        coverage[subtopic] = "GAP: searched successfully, no sources found"
     else:
-        findings += r["results"]
-        coverage[sub] = "covered"
+        findings += report["results"]
+        coverage[subtopic] = "covered"
 
 print(json.dumps(coverage, indent=1))
 print(len(findings), "findings kept for synthesis")

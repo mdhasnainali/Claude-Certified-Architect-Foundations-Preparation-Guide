@@ -21,7 +21,7 @@ Mini-project starter. Python 3.13+, `pydantic` 2, offline. At the top of `pipeli
 
 ```python
 # pipeline.py — part 1: documents and a fake extractor (stands in for messages.parse). Offline.
-DOCS = {
+INVOICES = {
     "inv-1": "Invoice 3 Nov 2026. Hosting $120.00. Support $80.00. TOTAL: $200.00",
     "inv-2": "Invoice 5 Nov 2026. Licences $1,440.00. TOTAL: $1,500.00",
     "inv-3": "Invoice 9 Nov 2026. Training $300.00. TOTAL: see attached statement",
@@ -29,14 +29,18 @@ DOCS = {
 
 def fake_extract(doc_id: str, feedback: str | None = None) -> dict:
     """First try makes a format mistake on inv-1; the retry (with feedback) fixes it."""
-    base = {"inv-1": {"invoice_date": "3 Nov 2026", "stated_total": 200,
-                      "items": [{"desc": "Hosting", "amount": 120}, {"desc": "Support", "amount": 80}]},
-            "inv-2": {"invoice_date": "2026-11-05", "stated_total": 1500,
-                      "items": [{"desc": "Licences", "amount": 1440}]},
-            "inv-3": {"invoice_date": "2026-11-09", "items": [{"desc": "Training", "amount": 300}]}}[doc_id]
+    extraction = {
+        "inv-1": {"invoice_date": "3 Nov 2026", "stated_total": 200,
+                  "items": [{"description": "Hosting", "amount": 120},
+                            {"description": "Support", "amount": 80}]},
+        "inv-2": {"invoice_date": "2026-11-05", "stated_total": 1500,
+                  "items": [{"description": "Licences", "amount": 1440}]},
+        "inv-3": {"invoice_date": "2026-11-09",
+                  "items": [{"description": "Training", "amount": 300}]},
+    }[doc_id]
     if doc_id == "inv-1" and feedback:
-        base = {**base, "invoice_date": "2026-11-03"}
-    return base
+        extraction = {**extraction, "invoice_date": "2026-11-03"}
+    return extraction
 ```
 
 ## When to use · gotchas
@@ -66,25 +70,26 @@ Fast mapping from question words to the D4 answer:
 
 ```python
 # pipeline.py — part 2: validate → retry with feedback → route
-results = {}
-for doc_id, doc in DOCS.items():
+outcomes = {}
+for doc_id, document in INVOICES.items():
     feedback = None
     for attempt in (1, 2):                                   # at most one retry
-        data = fake_extract(doc_id, feedback)
+        extraction = fake_extract(doc_id, feedback)
         try:
-            inv = Invoice(**data)
-        except ValidationError as e:
-            errors = [f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
-            if not should_retry(errors, doc) or attempt == 2:
-                results[doc_id] = f"HUMAN REVIEW: {errors}"    # missing data or repeated error
+            invoice = Invoice(**extraction)
+        except ValidationError as validation_error:
+            error_lines = [f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
+                           for error in validation_error.errors()]
+            if not should_retry(error_lines, document) or attempt == 2:
+                outcomes[doc_id] = f"HUMAN REVIEW: {error_lines}"    # missing data or repeated error
                 break
-            feedback = "Fix these errors: " + "; ".join(errors)  # sent with the doc + failed extraction
+            feedback = "Fix these errors: " + "; ".join(error_lines)  # sent with the document + failed extraction
             continue
-        results[doc_id] = ("HUMAN REVIEW: source totals disagree "
-                           f"(items {inv.calculated_total} vs stated {inv.stated_total})"
-                           if inv.conflict_detected else f"OK after {attempt} attempt(s)")
+        outcomes[doc_id] = ("HUMAN REVIEW: source totals disagree "
+                            f"(items {invoice.calculated_total} vs stated {invoice.stated_total})"
+                            if invoice.conflict_detected else f"OK after {attempt} attempt(s)")
         break
-for doc_id, outcome in results.items():
+for doc_id, outcome in outcomes.items():
     print(doc_id, "→", outcome)
 ```
 Expected output:

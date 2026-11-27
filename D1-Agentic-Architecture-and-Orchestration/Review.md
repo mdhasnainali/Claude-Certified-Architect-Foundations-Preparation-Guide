@@ -32,13 +32,13 @@ def reply(data: dict, error: bool = False) -> dict:
 
 @tool("get_customer", "Find and verify a customer by email. Call before any order or refund tool.", {"email": str})
 async def get_customer(args):
-    c = CUSTOMERS.get(args["email"])
-    return reply(c) if c else reply({"error": "not_found", "retryable": False}, error=True)
+    customer = CUSTOMERS.get(args["email"])
+    return reply(customer) if customer else reply({"error": "not_found", "retryable": False}, error=True)
 
 @tool("lookup_order", "Get ONE order (ORD-<n>) of a verified customer.", {"customer_id": str, "order_id": str})
 async def lookup_order(args):
-    o = ORDERS.get(args["order_id"])
-    return reply(o) if o else reply({"error": "not_found", "retryable": False}, error=True)
+    order = ORDERS.get(args["order_id"])
+    return reply(order) if order else reply({"error": "not_found", "retryable": False}, error=True)
 
 @tool("process_refund", "Refund one order. amount in USD.", {"customer_id": str, "order_id": str, "amount": float})
 async def process_refund(args):
@@ -88,57 +88,58 @@ from dataclasses import replace
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, ResultMessage, query
 from support_tools import server
 
-T = "mcp__support__"
-verified: set[str] = set()
+TOOL_PREFIX = "mcp__support__"
+verified_customers: set[str] = set()
 
 def deny(reason: str) -> dict:
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
             "permissionDecision": "deny", "permissionDecisionReason": reason}}
 
-async def remember(inp, tool_use_id, ctx):  # PostToolUse on get_customer
-    data = json.loads(inp["tool_response"]["content"][0]["text"])
-    if data.get("verified"):
-        verified.add(data["customer_id"])
+async def remember_verified(input_data, tool_use_id, context):     # PostToolUse on get_customer
+    customer = json.loads(input_data["tool_response"]["content"][0]["text"])
+    if customer.get("verified"):
+        verified_customers.add(customer["customer_id"])
     return {}
 
-async def gate(inp, tool_use_id, ctx):      # PreToolUse on lookup_order | process_refund
-    if inp["tool_input"].get("customer_id") in verified:
+async def require_verified(input_data, tool_use_id, context):      # PreToolUse on lookup_order | process_refund
+    if input_data["tool_input"].get("customer_id") in verified_customers:
         return {}
     return deny("Customer not verified. Call get_customer first.")
 
-async def limit(inp, tool_use_id, ctx):     # PreToolUse on process_refund
-    if inp["tool_input"]["amount"] <= 500:
+async def enforce_refund_limit(input_data, tool_use_id, context):  # PreToolUse on process_refund
+    if input_data["tool_input"]["amount"] <= 500:
         return {}
     return deny("Refunds over $500 need a human. Call escalate_to_human with a JSON handoff.")
 ```
 ```python
 # support_agent.py — part 2: options, loop result, sessions (lessons 1.1 + 1.7)
-opts = ClaudeAgentOptions(
+options = ClaudeAgentOptions(
     system_prompt="You are a support agent. When you escalate, the handoff JSON has: customer_id, "
                   "issue, root_cause, amount, done_so_far, recommended_action.",
     mcp_servers={"support": server},
-    allowed_tools=[T + n for n in ("get_customer", "lookup_order", "process_refund", "escalate_to_human")],
-    hooks={"PostToolUse": [HookMatcher(matcher=T + "get_customer", hooks=[remember])],
-           "PreToolUse": [HookMatcher(matcher=f"{T}lookup_order|{T}process_refund", hooks=[gate]),
-                          HookMatcher(matcher=T + "process_refund", hooks=[limit])]},
+    allowed_tools=[TOOL_PREFIX + name for name in ("get_customer", "lookup_order", "process_refund", "escalate_to_human")],
+    hooks={"PostToolUse": [HookMatcher(matcher=TOOL_PREFIX + "get_customer", hooks=[remember_verified])],
+           "PreToolUse": [HookMatcher(matcher=f"{TOOL_PREFIX}lookup_order|{TOOL_PREFIX}process_refund",
+                                      hooks=[require_verified]),
+                          HookMatcher(matcher=TOOL_PREFIX + "process_refund", hooks=[enforce_refund_limit])]},
 )
 
-async def ask(prompt: str, **extra) -> str:
-    sid = ""
-    async for m in query(prompt=prompt, options=replace(opts, **extra)):
-        if isinstance(m, ResultMessage):          # loop finished: check WHY (subtype)
-            sid = m.session_id
-            print(f"[{m.subtype}] {m.result}\n")
-    return sid
+async def run_session(prompt: str, **session_options) -> str:
+    session_id = ""
+    async for message in query(prompt=prompt, options=replace(options, **session_options)):
+        if isinstance(message, ResultMessage):          # loop finished: check WHY (subtype)
+            session_id = message.session_id
+            print(f"[{message.subtype}] {message.result}\n")
+    return session_id
 
 async def main():
-    sid = await ask("I'm ana@example.com. ORD-9 arrived broken and I want my $650 back.")
-    await ask("Also: please send the refund to my other card.", resume=sid)
-    await ask("Instead of a refund, offer store credit.", resume=sid, fork_session=True)
+    base_session_id = await run_session("I'm ana@example.com. ORD-9 arrived broken and I want my $650 back.")
+    await run_session("Also: please send the refund to my other card.", resume=base_session_id)
+    await run_session("Instead of a refund, offer store credit.", resume=base_session_id, fork_session=True)
 
 asyncio.run(main())
 ```
-Expected (wording varies): `get_customer` → `lookup_order` → `process_refund` is denied by `limit` → `HANDOFF → {"customer_id": "C7", "issue": "ORD-9 arrived broken", "amount": 650.0, ...}` → `[success] I've passed your case to a colleague…`. The resumed run remembers the case; the fork explores store credit without changing the original session.
+Expected (wording varies): `get_customer` → `lookup_order` → `process_refund` is denied by `enforce_refund_limit` → `HANDOFF → {"customer_id": "C7", "issue": "ORD-9 arrived broken", "amount": 650.0, ...}` → `[success] I've passed your case to a colleague…`. The resumed run remembers the case; the fork explores store credit without changing the original session.
 **Stretch:** add a read-only `policy-checker` subagent (`AgentDefinition`) and `"Agent"` to `allowed_tools`.
 
 </details>

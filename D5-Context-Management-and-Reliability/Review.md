@@ -67,27 +67,27 @@ Fast mapping from question words to the D5 answer:
 ```python
 # research_report.py — part 2: coordinator — coverage, provenance, conflict labels
 claims, coverage = [], {}
-for sub in ("visual art", "music", "film"):
-    r = search(sub)
-    claims += r["claims"]                                     # partial results are kept
-    if r["status"] == "partial":
-        coverage[sub] = f"PARTIAL: {r['failure_type']} after {r['attempted']}"
+for subtopic in ("visual art", "music", "film"):
+    report = search(subtopic)
+    claims += report["claims"]                                # partial results are kept
+    if report["status"] == "partial":
+        coverage[subtopic] = f"PARTIAL: {report['failure_type']} after {report['attempted']}"
     else:
-        coverage[sub] = "covered" if r["claims"] else "GAP: searched, no sources found"
+        coverage[subtopic] = "covered" if report["claims"] else "GAP: searched, no sources found"
 
-by_metric = defaultdict(list)
-for c in claims:
-    by_metric[c["metric"]].append(c)
+claims_by_metric = defaultdict(list)
+for claim in claims:
+    claims_by_metric[claim["metric"]].append(claim)
 
 print("## Findings")
-for metric, cs in by_metric.items():
-    values, dates = {c["value"] for c in cs}, {c["date"] for c in cs}
-    label = ("single source" if len(cs) == 1 else "agreed" if len(values) == 1
+for metric, metric_claims in claims_by_metric.items():
+    values, dates = {claim["value"] for claim in metric_claims}, {claim["date"] for claim in metric_claims}
+    label = ("single source" if len(metric_claims) == 1 else "agreed" if len(values) == 1
              else "changed over time" if len(dates) > 1 else "CONTESTED")
-    print(f"- {metric} [{label}]: " + "; ".join(f"{c['value']} ({c['source']}, {c['date']})" for c in cs))
+    print(f"- {metric} [{label}]: " + "; ".join(f"{claim['value']} ({claim['source']}, {claim['date']})" for claim in metric_claims))
 print("## Coverage")
-for sub, note in coverage.items():
-    print(f"- {sub}: {note}")
+for subtopic, note in coverage.items():
+    print(f"- {subtopic}: {note}")
 ```
 Expected output:
 ```

@@ -10,16 +10,15 @@ class Finding(BaseModel):
     line: int
     issue: str
     severity: Literal["high", "medium", "low"]
-    confidence: (
-        float  # self-reported: use it for routing only after calibration (lesson 5.5)
-    )
+    # self-reported: use it for routing only after calibration (lesson 5.5)
+    confidence: float
 
 
 class Review(BaseModel):
     findings: list[Finding]
 
 
-gen = client.messages.create(
+generation = client.messages.create(
     model="claude-haiku-5-5",
     max_tokens=4000,
     messages=[
@@ -29,10 +28,12 @@ gen = client.messages.create(
         }
     ],
 )
-code = next(b.text for b in gen.content if b.type == "text")
+generated_code = next(
+    block.text for block in generation.content if block.type == "text"
+)
 
 # Independent reviewer: a NEW request with only the code and the criteria, none of the generator's reasoning
-review = client.messages.parse(
+review_response = client.messages.parse(
     model="claude-haiku-5-5",
     max_tokens=4000,
     output_format=Review,
@@ -41,15 +42,18 @@ review = client.messages.parse(
             "role": "user",
             "content": "Review this code. Report only real bugs: wrong results or crashes on "
             "plausible inputs (negative, empty, no '$', other currencies). Skip style.\n<code>\n"
-            + code
+            + generated_code
             + "\n</code>",
         }
     ],
 )
-for f in review.parsed_output.findings:
+for finding in review_response.parsed_output.findings:
     route = (
         "post as PR comment"
-        if f.severity == "high" and f.confidence >= 0.8
+        if finding.severity == "high" and finding.confidence >= 0.8
         else "human triage queue"
     )
-    print(f"line {f.line} [{f.severity}, {f.confidence:.2f}] {f.issue} → {route}")
+    print(
+        f"line {finding.line} [{finding.severity}, {finding.confidence:.2f}] "
+        f"{finding.issue} → {route}"
+    )
